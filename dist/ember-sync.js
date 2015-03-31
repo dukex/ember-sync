@@ -929,19 +929,27 @@
           });
 
           onlineSearch.then(function(record) {
-            var id = record.get('id'),
-                persistenceState = _this.offlineStore.find(type, id);
+            var _records = Ember.isArray(record) ? record.content : [record]
+            var count = _records.length
 
-            var persistRecordOffline = function(onlineRecord) {
-              var persistence = Persistence.create({
-                onlineStore:  _this.onlineStore,
-                offlineStore: _this.offlineStore,
-              });
-              persistence.persistRecordOffline(type, record);
-            };
+            _records.forEach(function (record) {
+              var id = record.get('id'),
+                  persistenceState = _this.offlineStore.find(type, id);
 
-            persistenceState.then(persistRecordOffline, persistRecordOffline);
-            if (!isResolved) {
+              var persistRecordOffline = function(onlineRecord) {
+                var persistence = Persistence.create({
+                  onlineStore:  _this.onlineStore,
+                  offlineStore: _this.offlineStore,
+                });
+                persistence.persistRecordOffline(type, record);
+              };
+
+              persistenceState.then(persistRecordOffline, persistRecordOffline);
+
+              count--
+            })
+
+            if (!isResolved && count === 0) {
               _this.onRecordAdded(record);
               resolve(record);
               isResolved = true;
@@ -991,40 +999,42 @@
        * @method findQuery
        * @param {string} type
        * @param {object} query
-       * @return {Ember.A}
+       * @return {Promise}
        */
       findStream: function(type, offlinePromise, onlinePromise) {
         var _this = this,
             resultStream = Ember.A();
 
-        offlinePromise.then(function(results) {
-          results = _this.toArray(results);
-          _this.addResultToResultStream(resultStream, results);
-        });
-
-        onlinePromise.then(function(results) {
-          results = _this.toArray(results);
-          _this.addResultToResultStream(resultStream, results);
-
-          results.forEach(function(onlineResult) {
-            var id = onlineResult.get('id'),
-                persistenceState = _this.offlineStore.find(type, id);
-
-            var persistRecordOffline = function(onlineRecord) {
-              var persistence = Persistence.create({
-                onlineStore:  _this.onlineStore,
-                offlineStore: _this.offlineStore,
-              });
-              persistence.persistRecordOffline(type, onlineResult);
-            };
-
-            persistenceState.then(persistRecordOffline, persistRecordOffline);
+        return new Ember.RSVP.Promise(function(resolve, reject){
+          offlinePromise.then(function(results) {
+            results = _this.toArray(results);
+            _this.addResultToResultStream(resultStream, results);
           });
-        }, function(error) {
-          _this.get('onError')
-        });
 
-        return resultStream;
+          onlinePromise.then(function(results) {
+            results = _this.toArray(results);
+            _this.addResultToResultStream(resultStream, results);
+
+            results.forEach(function(onlineResult) {
+              var id = onlineResult.get('id'),
+                  persistenceState = _this.offlineStore.find(type, id);
+
+              var persistRecordOffline = function(onlineRecord) {
+                var persistence = Persistence.create({
+                  onlineStore:  _this.onlineStore,
+                  offlineStore: _this.offlineStore,
+                });
+                persistence.persistRecordOffline(type, onlineResult);
+              };
+
+              persistenceState.then(persistRecordOffline, persistRecordOffline);
+            });
+            resolve(results)
+          }, function(error) {
+            _this.get('onError')
+            reject(error)
+          });
+        })
       },
 
       /**
